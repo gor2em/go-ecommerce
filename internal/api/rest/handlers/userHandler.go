@@ -3,8 +3,10 @@ package handlers
 import (
 	"go-ecommerce-app/internal/api/rest"
 	"go-ecommerce-app/internal/dto"
+	"go-ecommerce-app/internal/repository"
 	"go-ecommerce-app/internal/service"
 	"net/http"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -19,7 +21,9 @@ func SetupUserRoutes(rh *rest.RestHandler) {
 
 	// create an instance of user service & inject to handler
 
-	svc := service.UserService{}
+	svc := service.UserService{
+		Repo: repository.NewUserRepository(rh.DB),
+	}
 	handler := UserHandler{
 		svc: svc,
 	}
@@ -32,7 +36,8 @@ func SetupUserRoutes(rh *rest.RestHandler) {
 	app.Get("/verify", handler.GetVerificationCode)
 	app.Post("/verify", handler.Verify)
 	app.Post("/profile", handler.CreateProfile)
-	app.Get("/profile", handler.GetProfile)
+	app.Get("/profile/:id", handler.GetProfile)
+	app.Patch("/profile/:id", handler.UpdateProfile)
 
 	app.Post("/cart", handler.AddToCart)
 	app.Get("/cart", handler.GetCart)
@@ -68,8 +73,25 @@ func (h *UserHandler) Register(ctx *fiber.Ctx) error {
 
 func (h *UserHandler) Login(ctx *fiber.Ctx) error {
 
+	loginInput := dto.UserLogin{}
+	err := ctx.BodyParser(&loginInput)
+
+	if err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "please provide valid inputs.",
+		})
+	}
+
+	token, err := h.svc.Login(loginInput.Email, loginInput.Password)
+	if err != nil {
+		return ctx.Status(http.StatusUnauthorized).JSON(&fiber.Map{
+			"message": "please provide correct user id password",
+		})
+	}
+
 	return ctx.Status(http.StatusOK).JSON(&fiber.Map{
 		"message": "login",
+		"token":   token,
 	})
 }
 
@@ -96,8 +118,54 @@ func (h *UserHandler) CreateProfile(ctx *fiber.Ctx) error {
 
 func (h *UserHandler) GetProfile(ctx *fiber.Ctx) error {
 
+	id, err := strconv.ParseUint(ctx.Params("id"), 10, 32)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).JSON(&fiber.Map{
+			"message": "error id",
+		})
+	}
+
+	user, err := h.svc.GetProfile(uint(id))
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).JSON(&fiber.Map{
+			"message": "user not found",
+		})
+	}
+
 	return ctx.Status(http.StatusOK).JSON(&fiber.Map{
 		"message": "getProfile",
+		"user":    user,
+	})
+}
+
+func (h *UserHandler) UpdateProfile(ctx *fiber.Ctx) error {
+
+	user := dto.UserUpdateProfile{}
+	err := ctx.BodyParser(&user)
+
+	if err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "please provide valid inputs.",
+		})
+	}
+
+	id, err := strconv.ParseUint(ctx.Params("id"), 10, 32)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).JSON(&fiber.Map{
+			"message": "error id",
+		})
+	}
+
+	updatedUser, err := h.svc.UpdateProfile(uint(id), user)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).JSON(&fiber.Map{
+			"message": "user not found",
+		})
+	}
+
+	return ctx.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "updateProfile",
+		"user":    updatedUser,
 	})
 }
 
